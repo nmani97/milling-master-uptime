@@ -1,0 +1,37 @@
+# Surveillance de milling-master.com toutes les 5 minutes (GitHub peut retarder de quelques minutes).
+# En cas d'échec, GitHub envoie un e-mail au propriétaire du dépôt.
+name: Surveillance milling-master.com
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+    - cron: '0 6 1 * *' # entretien mensuel : GitHub coupe les tâches planifiées d'un dépôt public inactif depuis 60 jours
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  check:
+    if: github.event.schedule != '0 6 1 * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Le site et la base répondent
+        run: |
+          for try in 1 2 3; do
+            ok=1
+            for p in / /formations; do
+              html=$(curl -fsS -m 20 "https://milling-master.com$p") || ok=0
+              echo "$html" | grep -q "Milling Master" || ok=0
+              echo "$html" | grep -qi "under maintenance" && ok=0
+            done
+            [ $ok = 1 ] && { echo "OK"; exit 0; }
+            sleep 40
+          done
+          echo "::error::milling-master.com ne répond pas correctement (3 essais sur 2 minutes)"; exit 1
+  keepalive:
+    if: github.event.schedule == '0 6 1 * *'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          git config user.name "surveillance" && git config user.email "actions@users.noreply.github.com"
+          git commit --allow-empty -m "entretien mensuel" && git push
